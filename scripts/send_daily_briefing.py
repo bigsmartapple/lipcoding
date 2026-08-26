@@ -1,7 +1,13 @@
 """매일 아침 카드·금융권 뉴스를 요약해 카카오톡 '나에게 보내기'로 전송하는 진입점.
 
-카테고리별로 하나의 list 템플릿 메시지를 보내며, 메시지 안의 기사 항목마다
-실제 기사 URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게 한다.
+카테고리별로 list 템플릿 메시지를 보내며, 메시지 안의 기사 항목마다 실제 기사
+URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게 한다. list 템플릿은
+한 메시지에 MAX_LIST_CONTENTS(3)개까지만 들어가므로, 그보다 많으면 여러
+메시지로 나눠 보낸다.
+
+카카오 메시지의 link(web_url)는 카카오 개발자 콘솔 [앱 설정 > 플랫폼 > Web
+도메인]에 등록된 도메인으로만 정상 동작한다. RSS_FEEDS/GOOGLE_NEWS_SITES에
+새 언론사를 추가하면 그 도메인도 Web 도메인에 등록해야 링크가 열린다.
 """
 from __future__ import annotations
 
@@ -10,14 +16,19 @@ import sys
 from datetime import datetime
 
 from fetch_news import KST, fetch_briefing_sections
-from kakao_client import refresh_access_token, send_list_message, send_text_message
+from kakao_client import MAX_LIST_CONTENTS, refresh_access_token, send_list_message, send_text_message
 
-FALLBACK_LINK_URL = "https://finance.naver.com/news/"
+# 카카오 콘솔 Web 도메인에 등록된 도메인이어야 링크가 정상 동작한다.
+FALLBACK_LINK_URL = "https://www.yna.co.kr"
 
 REQUIRED_ENV_VARS = [
     "KAKAO_REST_API_KEY",
     "KAKAO_REFRESH_TOKEN",
 ]
+
+
+def _chunk(items: list, size: int) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def main() -> int:
@@ -54,21 +65,24 @@ def main() -> int:
         if not articles:
             continue
 
-        header_title = f"📊 카드·금융 브리핑 ({today}) · {category} {len(articles)}건"
-        contents = [
-            {
-                "title": article["title"],
-                "description": article["press"],
-                "image_url": article["icon_url"],
-                "link": article["link"],
-            }
-            for article in articles
-        ]
-        print(header_title)
-        for article in articles:
-            print(f"  - {article['title']} ({article['press']})")
+        chunks = _chunk(articles, MAX_LIST_CONTENTS)
+        for idx, chunk in enumerate(chunks, 1):
+            page = f" [{idx}/{len(chunks)}]" if len(chunks) > 1 else ""
+            header_title = f"📊 카드·금융 브리핑 ({today}) · {category}{page}"
+            contents = [
+                {
+                    "title": article["title"],
+                    "description": article["press"],
+                    "image_url": article["icon_url"],
+                    "link": article["link"],
+                }
+                for article in chunk
+            ]
+            print(header_title)
+            for article in chunk:
+                print(f"  - {article['title']} ({article['press']})")
 
-        send_list_message(access_token, header_title, FALLBACK_LINK_URL, contents)
+            send_list_message(access_token, header_title, FALLBACK_LINK_URL, contents)
 
     print("카카오톡 브리핑 발송 완료")
     return 0

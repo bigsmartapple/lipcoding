@@ -14,6 +14,8 @@ TEXT_TEMPLATE_LIMIT = 200
 # list 템플릿의 header_title / 각 content title 권장 길이
 LIST_HEADER_LIMIT = 60
 LIST_TITLE_LIMIT = 60
+# 실제 발송 테스트로 확인된, list 템플릿 한 메시지에 들어가는 항목 최대 개수
+MAX_LIST_CONTENTS = 3
 
 
 def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
@@ -75,7 +77,10 @@ def send_list_message(
 
     contents 각 항목은 {"title", "description", "image_url", "link"} 키를 가지며,
     항목별로 서로 다른 link를 지정할 수 있어 기사마다 실제 URL로 연결된다.
+    contents가 MAX_LIST_CONTENTS를 넘으면 앞에서부터 잘라 보낸다 — 호출하는
+    쪽에서 미리 청크로 나눠 여러 메시지로 보내야 전체 항목이 누락되지 않는다.
     """
+    contents = contents[:MAX_LIST_CONTENTS]
     template_object = {
         "object_type": "list",
         "header_title": header_title[:LIST_HEADER_LIMIT],
