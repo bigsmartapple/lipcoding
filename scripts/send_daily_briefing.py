@@ -14,8 +14,6 @@ DEFAULT_LINK_URL = "https://finance.naver.com/news/"
 REQUIRED_ENV_VARS = [
     "KAKAO_REST_API_KEY",
     "KAKAO_REFRESH_TOKEN",
-    "NAVER_CLIENT_ID",
-    "NAVER_CLIENT_SECRET",
 ]
 
 
@@ -47,8 +45,6 @@ def main() -> int:
 
     rest_api_key = os.environ["KAKAO_REST_API_KEY"]
     refresh_token = os.environ["KAKAO_REFRESH_TOKEN"]
-    naver_client_id = os.environ["NAVER_CLIENT_ID"]
-    naver_client_secret = os.environ["NAVER_CLIENT_SECRET"]
 
     token_data = refresh_access_token(rest_api_key, refresh_token)
     access_token = token_data["access_token"]
@@ -60,7 +56,7 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    sections = fetch_briefing_sections(naver_client_id, naver_client_secret)
+    sections = fetch_briefing_sections()
     today = datetime.now(KST).strftime("%Y-%m-%d")
     briefing_text = build_briefing_text(sections, today)
 
