@@ -79,6 +79,16 @@ def _search_naver_news(keyword: str, now: datetime) -> list[dict]:
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
+    import sys as _sys
+    matches = soup.select("a.news_tit")
+    print(
+        f"::debug:: keyword={keyword!r} status={resp.status_code} "
+        f"html_len={len(resp.text)} news_tit_matches={len(matches)}",
+        file=_sys.stderr,
+    )
+    if not matches:
+        print(f"::debug:: html_snippet={resp.text[:1500]!r}", file=_sys.stderr)
+
     articles = []
     for link_tag in soup.select("a.news_tit")[:RESULTS_PER_KEYWORD]:
         title = html.unescape(link_tag.get("title") or link_tag.get_text(strip=True))
