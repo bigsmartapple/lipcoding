@@ -1,0 +1,27 @@
+name: Daily Card & Finance Kakao Briefing
+
+on:
+  schedule:
+    # 매일 08:00 KST (UTC 23:00, 전날)
+    - cron: "0 23 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  send-briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send Kakao briefing
+        working-directory: scripts
+        env:
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python send_daily_briefing.py
