@@ -82,12 +82,12 @@ def _search_naver_news(keyword: str, now: datetime) -> list[dict]:
     import sys as _sys
     matches = soup.select("a.news_tit")
     print(
-        f"::debug:: keyword={keyword!r} status={resp.status_code} "
+        f"[DEBUG] keyword={keyword!r} status={resp.status_code} url={resp.url} "
         f"html_len={len(resp.text)} news_tit_matches={len(matches)}",
         file=_sys.stderr,
     )
     if not matches:
-        print(f"::debug:: html_snippet={resp.text[:1500]!r}", file=_sys.stderr)
+        print(f"[DEBUG] html_snippet={resp.text[:1500]!r}", file=_sys.stderr)
 
     articles = []
     for link_tag in soup.select("a.news_tit")[:RESULTS_PER_KEYWORD]:
@@ -125,7 +125,7 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
                 items = _search_naver_news(keyword, now)
             except requests.RequestException as exc:
                 import sys as _sys
-                print(f"::debug:: keyword={keyword!r} request_exception={exc!r}", file=_sys.stderr)
+                print(f"[DEBUG] keyword={keyword!r} request_exception={exc!r}", file=_sys.stderr)
                 continue
 
             for item in items:
