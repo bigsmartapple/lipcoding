@@ -14,12 +14,21 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
+from urllib.parse import urlencode
 
-from fetch_news import KST, fetch_briefing_sections
+from fetch_news import KST, SECTIONS, fetch_briefing_sections
 from kakao_client import MAX_LIST_CONTENTS, refresh_access_token, send_list_message, send_text_message
 
 # 카카오 콘솔 Web 도메인에 등록된 도메인이어야 링크가 정상 동작한다.
 FALLBACK_LINK_URL = "https://www.yna.co.kr"
+GOOGLE_NEWS_SEARCH_PAGE = "https://news.google.com/search"
+
+
+def _category_more_link(category: str) -> str:
+    """"더보기" 버튼이 그 카테고리 관련 기사를 더 볼 수 있는 구글 뉴스 검색 결과로 가게 한다."""
+    query = " OR ".join(SECTIONS[category])
+    params = urlencode({"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"})
+    return f"{GOOGLE_NEWS_SEARCH_PAGE}?{params}"
 
 REQUIRED_ENV_VARS = [
     "KAKAO_REST_API_KEY",
@@ -65,6 +74,7 @@ def main() -> int:
         if not articles:
             continue
 
+        more_link = _category_more_link(category)
         chunks = _chunk(articles, MAX_LIST_CONTENTS)
         for idx, chunk in enumerate(chunks, 1):
             page = f" [{idx}/{len(chunks)}]" if len(chunks) > 1 else ""
@@ -82,7 +92,7 @@ def main() -> int:
             for article in chunk:
                 print(f"  - {article['title']} ({article['press']})")
 
-            send_list_message(access_token, header_title, FALLBACK_LINK_URL, contents)
+            send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
 
     print("카카오톡 브리핑 발송 완료")
     return 0
