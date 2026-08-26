@@ -123,7 +123,9 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
         for keyword in keywords:
             try:
                 items = _search_naver_news(keyword, now)
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                import sys as _sys
+                print(f"::debug:: keyword={keyword!r} request_exception={exc!r}", file=_sys.stderr)
                 continue
 
             for item in items:
