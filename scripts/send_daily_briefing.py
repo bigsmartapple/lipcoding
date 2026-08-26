@@ -58,7 +58,7 @@ def main() -> int:
 
     for category, articles in sections.items():
         for article in articles:
-            press = f" - {article['press']}" if article["press"] else ""
+            press = f" ({article['press']})" if article["press"] else ""
             text = f"[{category}] {article['title']}{press}"
             print(text)
             send_text_message(access_token, text, article["link"])
