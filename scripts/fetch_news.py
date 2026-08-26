@@ -38,6 +38,9 @@ SECTIONS: dict[str, list[str]] = {
     "금융권": ["금융지주", "시중은행", "금융위원회", "핀테크", "금융권", "저축은행", "은행권"],
 }
 
+# 인사/부고/동정 등 브리핑 가치가 낮은 정형 기사 제외
+EXCLUDE_KEYWORDS = ["[인사]", "[부고]", "[동정]", "[포토]", "[사진]", "[알림]"]
+
 
 def _press_name(link: str) -> str:
     try:
@@ -89,6 +92,8 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
     for item in sorted(all_items, key=lambda a: a["pub_date"], reverse=True):
         title = item["title"]
         if title in seen_titles or item["pub_date"] < cutoff:
+            continue
+        if any(keyword in title for keyword in EXCLUDE_KEYWORDS):
             continue
 
         for category, keywords in SECTIONS.items():

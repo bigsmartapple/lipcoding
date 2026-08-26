@@ -10,8 +10,6 @@ KAKAO_MEMO_SEND_URL = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
 
 # 카카오 기본 text 템플릿의 text 필드는 최대 200자까지 표시된다.
 TEXT_TEMPLATE_LIMIT = 200
-# 실제 전송 전 [i/N] 같은 접두어가 붙을 여유를 남겨둔다.
-CHUNK_SAFETY_LIMIT = 180
 
 
 def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
@@ -33,11 +31,15 @@ def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
     return resp.json()
 
 
-def send_text_message(access_token: str, text: str, link_url: str, button_title: str = "뉴스 더보기") -> dict:
-    """카카오톡 '나에게 보내기'로 기본 text 템플릿 메시지를 전송한다."""
+def send_text_message(access_token: str, text: str, link_url: str, button_title: str = "기사 보기") -> dict:
+    """카카오톡 '나에게 보내기'로 기본 text 템플릿 메시지를 전송한다.
+
+    link_url이 각 기사의 실제 URL이어야, 메시지에 붙는 버튼/링크가 해당 기사로
+    바로 연결된다 (모든 메시지에 같은 링크를 쓰면 그 링크로만 연결된다).
+    """
     template_object = {
         "object_type": "text",
-        "text": text,
+        "text": text[:TEXT_TEMPLATE_LIMIT],
         "link": {"web_url": link_url, "mobile_web_url": link_url},
         "button_title": button_title,
     }
@@ -49,34 +51,3 @@ def send_text_message(access_token: str, text: str, link_url: str, button_title:
     )
     resp.raise_for_status()
     return resp.json()
-
-
-def split_into_chunks(text: str, limit: int = CHUNK_SAFETY_LIMIT) -> list[str]:
-    """줄 단위로 text를 limit 이하의 조각으로 나눈다."""
-    lines = text.split("\n")
-    chunks: list[str] = []
-    current = ""
-
-    for line in lines:
-        candidate = f"{current}\n{line}" if current else line
-        if len(candidate) > limit and current:
-            chunks.append(current)
-            current = line
-        else:
-            current = candidate
-
-    if current:
-        chunks.append(current)
-
-    return chunks or [text[:limit]]
-
-
-def send_briefing(access_token: str, full_text: str, link_url: str) -> None:
-    """긴 브리핑 텍스트를 여러 메시지로 나누어 순서대로 전송한다."""
-    raw_chunks = split_into_chunks(full_text)
-    total = len(raw_chunks)
-
-    for idx, chunk in enumerate(raw_chunks, 1):
-        prefix = f"[{idx}/{total}]\n" if total > 1 else ""
-        message = f"{prefix}{chunk}"[:TEXT_TEMPLATE_LIMIT]
-        send_text_message(access_token, message, link_url)
