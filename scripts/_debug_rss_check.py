@@ -1,5 +1,6 @@
-"""임시 진단 스크립트: 후보 RSS 피드 URL들이 실제로 응답하는지 확인한다."""
+"""임시 진단 스크립트: 유효한 RSS 피드의 실제 기사 구조를 확인한다."""
 import sys
+import xml.etree.ElementTree as ET
 
 import requests
 
@@ -12,31 +13,24 @@ HEADERS = {
 
 CANDIDATES = [
     "https://www.yna.co.kr/rss/economy.xml",
-    "https://www.yna.co.kr/rss/finance.xml",
     "https://www.mk.co.kr/rss/30000001/",
     "https://www.mk.co.kr/rss/50100032/",
-    "https://www.hankyung.com/feed/economy",
-    "https://www.hankyung.com/feed/finance",
-    "http://rss.hankyung.com/economy.xml",
-    "https://biz.chosun.com/site/data/rss/rss.xml",
-    "https://www.edaily.co.kr/rss/economy.xml",
-    "https://www.fnnews.com/rss/r20/fn_realestate_news.xml",
-    "https://www.fnnews.com/rss/f_editorial.xml",
-    "http://www.asiae.co.kr/rss/economic.xml",
-    "https://www.asiae.co.kr/rss/economic.htm",
-    "http://biz.heraldcorp.com/rss/",
-    "https://biz.heraldcorp.com/rss_all.php",
 ]
 
 for url in CANDIDATES:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=8)
-        ctype = resp.headers.get("Content-Type", "")
-        snippet = resp.text[:200].replace("\n", " ")
-        print(
-            f"[DEBUG] url={url} status={resp.status_code} ctype={ctype!r} "
-            f"len={len(resp.text)} snippet={snippet!r}",
-            file=sys.stderr,
-        )
-    except requests.RequestException as exc:
+        root = ET.fromstring(resp.content)
+        items = root.findall(".//item")
+        print(f"[DEBUG] url={url} item_count={len(items)}", file=sys.stderr)
+        for item in items[:6]:
+            title = item.findtext("title", "")
+            link = item.findtext("link", "")
+            pub_date = item.findtext("pubDate", "")
+            category = item.findtext("category", "")
+            print(
+                f"[DEBUG]   title={title!r} category={category!r} pubDate={pub_date!r} link={link!r}",
+                file=sys.stderr,
+            )
+    except Exception as exc:  # noqa: BLE001
         print(f"[DEBUG] url={url} EXCEPTION={exc!r}", file=sys.stderr)
