@@ -1,9 +1,11 @@
 """카드·금융권 뉴스를 주요 언론사 RSS 피드에서 키워드로 필터링해 가져온다.
 
 네이버 뉴스 검색(search.naver.com)은 GitHub Actions 같은 클라우드 서버 IP에서의
-요청을 403으로 차단하기 때문에, 대신 언론사가 직접 제공하는 RSS 피드(기계가
-읽도록 만들어진 포맷이라 이런 차단이 없다)에서 기사를 모아 카드/금융 키워드로
-필터링하는 방식을 사용한다.
+요청을 403으로 차단하기 때문에, 대신 다음 두 경로에서 기사를 모은다.
+1. 언론사가 직접 제공하는 RSS 피드 (연합뉴스, 매일경제 — 기계가 읽도록 만들어진
+   포맷이라 이런 차단이 없다)
+2. 구글 뉴스 RSS의 site: 검색 (머니투데이 — 자체 RSS 서비스를 중단(HTTP 410)했기
+   때문에, 구글 뉴스에서 site:mt.co.kr로 검색해 대신 가져온다)
 """
 from __future__ import annotations
 
@@ -28,6 +30,10 @@ RSS_FEEDS = [
     "https://www.mk.co.kr/rss/50100032/",
 ]
 
+# 자체 RSS가 없는 언론사는 구글 뉴스 site: 검색으로 대체한다
+GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
+GOOGLE_NEWS_SITES = ["mt.co.kr"]
+
 KST = timezone(timedelta(hours=9))
 MAX_ARTICLE_AGE_HOURS = 26
 ARTICLES_PER_SECTION = 5
@@ -41,15 +47,25 @@ SECTIONS: dict[str, list[str]] = {
 # 인사/부고/동정 등 브리핑 가치가 낮은 정형 기사 제외
 EXCLUDE_KEYWORDS = ["[인사]", "[부고]", "[동정]", "[포토]", "[사진]", "[알림]"]
 
+# 카카오톡은 메시지 본문에 도메인 형태 문자열(예: yna.co.kr)이 있으면 자동으로
+# 링크로 인식해 우리가 지정한 기사 링크 대신 그 도메인의 홈페이지로 연결해버린다.
+# 그래서 언론사명은 도메인이 아니라 한글 이름으로 표시한다.
+PRESS_NAME_BY_HOST = {
+    "yna.co.kr": "연합뉴스",
+    "mk.co.kr": "매일경제",
+}
+
 
 def _press_name(link: str) -> str:
     try:
-        return urlparse(link).netloc.replace("www.", "")
+        host = urlparse(link).netloc.replace("www.", "")
     except ValueError:
         return ""
+    return PRESS_NAME_BY_HOST.get(host, "")
 
 
 def _fetch_feed_items(url: str) -> list[dict]:
+    """언론사 자체 RSS 피드에서 기사를 가져온다."""
     resp = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
     resp.raise_for_status()
     root = ET.fromstring(resp.content)
@@ -69,7 +85,47 @@ def _fetch_feed_items(url: str) -> list[dict]:
         except (TypeError, ValueError):
             continue
 
-        items.append({"title": title, "link": link, "pub_date": pub_date})
+        items.append({"title": title, "link": link, "press": _press_name(link), "pub_date": pub_date})
+
+    return items
+
+
+def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
+    """구글 뉴스 RSS에서 특정 사이트(site:)와 키워드로 기사를 검색한다."""
+    query = f"site:{site} {keyword}"
+    resp = requests.get(
+        GOOGLE_NEWS_SEARCH_URL,
+        params={"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"},
+        headers=REQUEST_HEADERS,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    root = ET.fromstring(resp.content)
+
+    items = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        press = (item.findtext("source") or "").strip()
+        pub_date_text = item.findtext("pubDate") or ""
+        if not title or not link:
+            continue
+
+        # 구글 뉴스는 제목 끝에 " - 언론사명"을 붙이는데, 원문 제목에 이미
+        # 언론사명이 붙어있으면 중복으로 두 번 붙는 경우가 있어 모두 제거한다.
+        if press:
+            suffix = f" - {press}"
+            while title.endswith(suffix):
+                title = title[: -len(suffix)].strip()
+
+        try:
+            pub_date = parsedate_to_datetime(pub_date_text)
+            if pub_date.tzinfo is None:
+                pub_date = pub_date.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+
+        items.append({"title": title, "link": link, "press": press, "pub_date": pub_date})
 
     return items
 
@@ -85,6 +141,14 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
             all_items.extend(_fetch_feed_items(feed_url))
         except (requests.RequestException, ET.ParseError):
             continue
+
+    for site in GOOGLE_NEWS_SITES:
+        for keywords in SECTIONS.values():
+            for keyword in keywords:
+                try:
+                    all_items.extend(_fetch_google_news_site_items(site, keyword))
+                except (requests.RequestException, ET.ParseError):
+                    continue
 
     sections: dict[str, list[dict]] = {category: [] for category in SECTIONS}
     seen_titles: set[str] = set()
@@ -105,7 +169,7 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
                     {
                         "title": title,
                         "link": item["link"],
-                        "press": _press_name(item["link"]),
+                        "press": item["press"],
                         "pub_date": item["pub_date"],
                     }
                 )
