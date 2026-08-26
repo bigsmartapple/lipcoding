@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import requests
 
@@ -10,6 +11,9 @@ KAKAO_MEMO_SEND_URL = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
 
 # 카카오 기본 text 템플릿의 text 필드는 최대 200자까지 표시된다.
 TEXT_TEMPLATE_LIMIT = 200
+# list 템플릿의 header_title / 각 content title 권장 길이
+LIST_HEADER_LIMIT = 60
+LIST_TITLE_LIMIT = 60
 
 
 def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
@@ -31,23 +35,62 @@ def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
     return resp.json()
 
 
-def send_text_message(access_token: str, text: str, link_url: str, button_title: str = "기사 보기") -> dict:
-    """카카오톡 '나에게 보내기'로 기본 text 템플릿 메시지를 전송한다.
+def _send_template(access_token: str, template_object: dict) -> dict:
+    """template_object를 카카오 '나에게 보내기' API로 전송한다.
 
-    link_url이 각 기사의 실제 URL이어야, 메시지에 붙는 버튼/링크가 해당 기사로
-    바로 연결된다 (모든 메시지에 같은 링크를 쓰면 그 링크로만 연결된다).
+    실패 시 카카오가 돌려준 에러 본문을 stderr에 출력해 원인을 바로
+    알 수 있게 한다 (그냥 raise_for_status만 하면 상태 코드만 남는다).
     """
-    template_object = {
-        "object_type": "text",
-        "text": text[:TEXT_TEMPLATE_LIMIT],
-        "link": {"web_url": link_url, "mobile_web_url": link_url},
-        "button_title": button_title,
-    }
     resp = requests.post(
         KAKAO_MEMO_SEND_URL,
         headers={"Authorization": f"Bearer {access_token}"},
         data={"template_object": json.dumps(template_object, ensure_ascii=False)},
         timeout=10,
     )
+    if not resp.ok:
+        print(f"[ERROR] 카카오 메시지 발송 실패: status={resp.status_code} body={resp.text}", file=sys.stderr)
     resp.raise_for_status()
     return resp.json()
+
+
+def send_text_message(access_token: str, text: str, link_url: str, button_title: str = "기사 보기") -> dict:
+    """카카오톡 '나에게 보내기'로 기본 text 템플릿 메시지를 전송한다."""
+    template_object = {
+        "object_type": "text",
+        "text": text[:TEXT_TEMPLATE_LIMIT],
+        "link": {"web_url": link_url, "mobile_web_url": link_url},
+        "button_title": button_title,
+    }
+    return _send_template(access_token, template_object)
+
+
+def send_list_message(
+    access_token: str,
+    header_title: str,
+    header_link: str,
+    contents: list[dict],
+    button_title: str = "더보기",
+) -> dict:
+    """카카오톡 '나에게 보내기'로 list 템플릿 메시지를 전송한다.
+
+    contents 각 항목은 {"title", "description", "image_url", "link"} 키를 가지며,
+    항목별로 서로 다른 link를 지정할 수 있어 기사마다 실제 URL로 연결된다.
+    """
+    template_object = {
+        "object_type": "list",
+        "header_title": header_title[:LIST_HEADER_LIMIT],
+        "header_link": {"web_url": header_link, "mobile_web_url": header_link},
+        "contents": [
+            {
+                "title": item["title"][:LIST_TITLE_LIMIT],
+                "description": item.get("description", ""),
+                "image_url": item["image_url"],
+                "image_width": 64,
+                "image_height": 64,
+                "link": {"web_url": item["link"], "mobile_web_url": item["link"]},
+            }
+            for item in contents
+        ],
+        "button_title": button_title,
+    }
+    return _send_template(access_token, template_object)
