@@ -56,12 +56,20 @@ PRESS_NAME_BY_HOST = {
 }
 
 
-def _press_name(link: str) -> str:
+def _host_of(link: str) -> str:
     try:
-        host = urlparse(link).netloc.replace("www.", "")
+        return urlparse(link).netloc.replace("www.", "")
     except ValueError:
         return ""
+
+
+def _press_name(host: str) -> str:
     return PRESS_NAME_BY_HOST.get(host, "")
+
+
+def _icon_url(host: str) -> str:
+    """list 템플릿은 항목마다 image_url이 필수라서, 언론사 파비콘을 아이콘으로 쓴다."""
+    return f"https://www.google.com/s2/favicons?sz=64&domain={host}"
 
 
 def _fetch_feed_items(url: str) -> list[dict]:
@@ -85,7 +93,16 @@ def _fetch_feed_items(url: str) -> list[dict]:
         except (TypeError, ValueError):
             continue
 
-        items.append({"title": title, "link": link, "press": _press_name(link), "pub_date": pub_date})
+        host = _host_of(link)
+        items.append(
+            {
+                "title": title,
+                "link": link,
+                "press": _press_name(host),
+                "host": host,
+                "pub_date": pub_date,
+            }
+        )
 
     return items
 
@@ -125,7 +142,7 @@ def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
         except (TypeError, ValueError):
             continue
 
-        items.append({"title": title, "link": link, "press": press, "pub_date": pub_date})
+        items.append({"title": title, "link": link, "press": press, "host": site, "pub_date": pub_date})
 
     return items
 
@@ -170,6 +187,7 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
                         "title": title,
                         "link": item["link"],
                         "press": item["press"],
+                        "icon_url": _icon_url(item["host"]),
                         "pub_date": item["pub_date"],
                     }
                 )
