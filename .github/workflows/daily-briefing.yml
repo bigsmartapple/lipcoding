@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: DEBUG RSS check
+      - name: Send Kakao briefing
         working-directory: scripts
-        run: python _debug_rss_check.py
+        env:
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python send_daily_briefing.py
