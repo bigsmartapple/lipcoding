@@ -19,10 +19,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: DEBUG RSS check
-        working-directory: scripts
-        run: python _debug_rss_check.py
-
       - name: Send Kakao briefing
         working-directory: scripts
         env:
