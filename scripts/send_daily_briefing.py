@@ -1,10 +1,9 @@
 """매일 아침 카드·금융권 뉴스를 요약해 카카오톡 '나에게 보내기'로 전송하는 진입점.
 
-카테고리별로 list 템플릿 메시지를 보내며, 메시지 안의 기사 항목마다 실제 기사
-URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게 한다. list 템플릿은
-한 메시지에 MAX_LIST_CONTENTS(3)개까지만 들어가므로, 그보다 많으면 여러
-메시지로 나눠 보낸다. 반대로 항목이 1개뿐이면 카카오가 400 에러를 내므로
-그런 경우엔 text 템플릿으로 대체한다.
+카드업계·금융권을 합쳐 최신순으로 최대 3건만 골라 하나의 list 템플릿 메시지로
+보낸다 (카카오 list 템플릿은 실제로 2~3개 항목만 안정적으로 동작한다 — 1개면
+400 에러, 4개 이상이면 카카오가 임의로 3개까지만 보여준다). 각 항목은 실제
+기사 URL로 연결된다.
 
 카카오 메시지의 link(web_url)는 카카오 개발자 콘솔 [앱 설정 > 플랫폼 > Web
 도메인]에 등록된 도메인으로만 정상 동작한다. RSS_FEEDS/GOOGLE_NEWS_SITES에
@@ -24,21 +23,18 @@ from kakao_client import MAX_LIST_CONTENTS, refresh_access_token, send_list_mess
 FALLBACK_LINK_URL = "https://www.yna.co.kr"
 GOOGLE_NEWS_SEARCH_PAGE = "https://news.google.com/search"
 
-
-def _category_more_link(category: str) -> str:
-    """"더보기" 버튼이 그 카테고리 관련 기사를 더 볼 수 있는 구글 뉴스 검색 결과로 가게 한다."""
-    query = " OR ".join(SECTIONS[category])
-    params = urlencode({"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"})
-    return f"{GOOGLE_NEWS_SEARCH_PAGE}?{params}"
-
 REQUIRED_ENV_VARS = [
     "KAKAO_REST_API_KEY",
     "KAKAO_REFRESH_TOKEN",
 ]
 
 
-def _chunk(items: list, size: int) -> list[list]:
-    return [items[i : i + size] for i in range(0, len(items), size)]
+def _more_link() -> str:
+    """"더보기" 버튼이 카드·금융 관련 기사를 더 볼 수 있는 구글 뉴스 검색 결과로 가게 한다."""
+    all_keywords = [kw for keywords in SECTIONS.values() for kw in keywords]
+    query = " OR ".join(all_keywords)
+    params = urlencode({"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"})
+    return f"{GOOGLE_NEWS_SEARCH_PAGE}?{params}"
 
 
 def main() -> int:
@@ -62,45 +58,42 @@ def main() -> int:
 
     sections = fetch_briefing_sections()
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    total_articles = sum(len(articles) for articles in sections.values())
 
-    if not total_articles:
-        text = f"📊 카드·금융 브리핑 ({today})\n\n오늘은 카드·금융권 주요 뉴스가 확인되지 않았습니다."
+    articles = [
+        {**article, "category": category} for category, arts in sections.items() for article in arts
+    ]
+    articles.sort(key=lambda a: a["pub_date"], reverse=True)
+    top_articles = articles[:MAX_LIST_CONTENTS]
+
+    header_title = f"📊 카드·금융 브리핑 ({today})"
+
+    if not top_articles:
+        text = f"{header_title}\n\n오늘은 카드·금융권 주요 뉴스가 확인되지 않았습니다."
         print(text)
         send_text_message(access_token, text, FALLBACK_LINK_URL, button_title="더보기")
         print("카카오톡 브리핑 발송 완료")
         return 0
 
-    for category, articles in sections.items():
-        if not articles:
-            continue
+    print(header_title)
+    for article in top_articles:
+        print(f"  - [{article['category']}] {article['title']} ({article['press']})")
 
-        more_link = _category_more_link(category)
-        chunks = _chunk(articles, MAX_LIST_CONTENTS)
-        for idx, chunk in enumerate(chunks, 1):
-            page = f" [{idx}/{len(chunks)}]" if len(chunks) > 1 else ""
-            header_title = f"📊 카드·금융 브리핑 ({today}) · {category}{page}"
-            contents = [
-                {
-                    "title": article["title"],
-                    "description": article["press"],
-                    "image_url": article["icon_url"],
-                    "link": article["link"],
-                }
-                for article in chunk
-            ]
-            print(header_title)
-            for article in chunk:
-                print(f"  - {article['title']} ({article['press']})")
-
-            if len(chunk) == 1:
-                # 카카오 list 템플릿은 항목이 1개면 400 에러를 낸다(2개 이상 필요).
-                # 이런 경우엔 text 템플릿으로 그 기사 링크를 바로 보낸다.
-                article = chunk[0]
-                text = f"{header_title}\n{article['title']} ({article['press']})"
-                send_text_message(access_token, text, article["link"])
-            else:
-                send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
+    if len(top_articles) == 1:
+        # 카카오 list 템플릿은 항목이 1개면 400 에러를 낸다(2개 이상 필요).
+        article = top_articles[0]
+        text = f"{header_title}\n[{article['category']}] {article['title']} ({article['press']})"
+        send_text_message(access_token, text, article["link"])
+    else:
+        contents = [
+            {
+                "title": f"[{article['category']}] {article['title']}",
+                "description": article["press"],
+                "image_url": article["icon_url"],
+                "link": article["link"],
+            }
+            for article in top_articles
+        ]
+        send_list_message(access_token, header_title, _more_link(), contents, button_title="관련기사 더보기")
 
     print("카카오톡 브리핑 발송 완료")
     return 0

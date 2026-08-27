@@ -4,8 +4,9 @@
 요청을 403으로 차단하기 때문에, 대신 다음 두 경로에서 기사를 모은다.
 1. 언론사가 직접 제공하는 RSS 피드 (연합뉴스, 매일경제 — 기계가 읽도록 만들어진
    포맷이라 이런 차단이 없다)
-2. 구글 뉴스 RSS의 site: 검색 (머니투데이 — 자체 RSS 서비스를 중단(HTTP 410)했기
-   때문에, 구글 뉴스에서 site:mt.co.kr로 검색해 대신 가져온다)
+2. 구글 뉴스 RSS의 site: 검색 (머니투데이는 자체 RSS 서비스를 중단(HTTP 410)해서
+   대체 수단으로, 매일경제는 자체 RSS 카테고리에 카드/금융 키워드 기사가 없는
+   날을 보완하기 위해 추가로 site:mt.co.kr / site:mk.co.kr로 검색해 가져온다)
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ RSS_FEEDS = [
 
 # 자체 RSS가 없는 언론사는 구글 뉴스 site: 검색으로 대체한다
 GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
-GOOGLE_NEWS_SITES = ["mt.co.kr"]
+GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr"]
 
 KST = timezone(timedelta(hours=9))
 MAX_ARTICLE_AGE_HOURS = 26
