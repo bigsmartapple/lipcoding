@@ -3,7 +3,8 @@
 카테고리별로 list 템플릿 메시지를 보내며, 메시지 안의 기사 항목마다 실제 기사
 URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게 한다. list 템플릿은
 한 메시지에 MAX_LIST_CONTENTS(3)개까지만 들어가므로, 그보다 많으면 여러
-메시지로 나눠 보낸다.
+메시지로 나눠 보낸다. 반대로 항목이 1개뿐이면 카카오가 400 에러를 내므로
+그런 경우엔 text 템플릿으로 대체한다.
 
 카카오 메시지의 link(web_url)는 카카오 개발자 콘솔 [앱 설정 > 플랫폼 > Web
 도메인]에 등록된 도메인으로만 정상 동작한다. RSS_FEEDS/GOOGLE_NEWS_SITES에
@@ -92,7 +93,14 @@ def main() -> int:
             for article in chunk:
                 print(f"  - {article['title']} ({article['press']})")
 
-            send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
+            if len(chunk) == 1:
+                # 카카오 list 템플릿은 항목이 1개면 400 에러를 낸다(2개 이상 필요).
+                # 이런 경우엔 text 템플릿으로 그 기사 링크를 바로 보낸다.
+                article = chunk[0]
+                text = f"{header_title}\n{article['title']} ({article['press']})"
+                send_text_message(access_token, text, article["link"])
+            else:
+                send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
 
     print("카카오톡 브리핑 발송 완료")
     return 0
