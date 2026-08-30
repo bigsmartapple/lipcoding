@@ -1,11 +1,13 @@
 name: Daily Card & Finance Kakao Briefing
 
 on:
-  schedule:
-    # 매일 08:07 KST (UTC 23:07, 전날). 정각(0분)은 GitHub Actions 스케줄이
-    # 트래픽 몰림으로 지연/누락되기 쉬워 공식적으로 피하도록 권장하고 있어
-    # 분을 살짝 밀었다.
-    - cron: "7 23 * * *"
+  # GitHub Actions의 자체 schedule 트리거는 이 저장소에서 신뢰할 수 없었다 —
+  # 처음엔 며칠간 아예 실행되지 않았고, 이후엔 실행되긴 했지만 매번 다른
+  # (그리고 설정한 cron과 무관한, 아침이 아닌) 시각에 실행되어 외부 백업
+  # 트리거(매일 08:07 KST에 GitHub API로 workflow_dispatch 호출)와 겹쳐
+  # 하루에 두 번 발송되는 문제가 있었다. 그래서 schedule은 빼고
+  # workflow_dispatch(수동/외부 트리거)만 남긴다 — 실제 매일 발송은 외부
+  # 트리거가 담당한다.
   workflow_dispatch: {}
 
 jobs:
