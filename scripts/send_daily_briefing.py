@@ -1,4 +1,4 @@
-"""매일 아침 카드·금융권 뉴스를 요약해 카카오톡 '나에게 보내기'로 전송하는 진입점.
+"""매일 아침 카드업계 뉴스를 요약해 카카오톡 '나에게 보내기'로 전송하는 진입점.
 
 카테고리별로 list 템플릿 메시지를 보내며, 메시지 안의 기사 항목마다 실제 기사
 URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게 한다. list 템플릿은
@@ -65,7 +65,7 @@ def main() -> int:
     total_articles = sum(len(articles) for articles in sections.values())
 
     if not total_articles:
-        text = f"📊 카드·금융 브리핑 ({today})\n\n오늘은 카드·금융권 주요 뉴스가 확인되지 않았습니다."
+        text = f"📊 카드업계 브리핑 ({today})\n\n오늘은 카드업계 주요 뉴스가 확인되지 않았습니다."
         print(text)
         send_text_message(access_token, text, FALLBACK_LINK_URL, button_title="더보기")
         print("카카오톡 브리핑 발송 완료")
@@ -79,7 +79,7 @@ def main() -> int:
         chunks = _chunk(articles, MAX_LIST_CONTENTS)
         for idx, chunk in enumerate(chunks, 1):
             page = f" [{idx}/{len(chunks)}]" if len(chunks) > 1 else ""
-            header_title = f"📊 카드·금융 브리핑 ({today}) · {category}{page}"
+            header_title = f"📊 카드업계 브리핑 ({today}){page}"
             contents = [
                 {
                     "title": article["title"],

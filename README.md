@@ -1,15 +1,17 @@
 # lipcoding
 lipcoding competition
 
-## 카드·금융 카카오톡 아침 브리핑
+## 카드업계 카카오톡 아침 브리핑
 
-매일 아침 카드사·금융권 관련 뉴스를 요약해 카카오톡 "나에게 보내기"로 자동 발송하는
+매일 아침 카드업계 관련 뉴스를 요약해 카카오톡 "나에게 보내기"로 자동 발송하는
 GitHub Actions 워크플로우입니다.
 
-- 뉴스 수집: 연합뉴스·매일경제 RSS 피드 + 머니투데이(구글 뉴스 site: 검색)에서
-  카드업계 / 금융권 키워드로 필터링 (API 키 불필요)
+- 뉴스 수집: 연합뉴스·매일경제 RSS 피드 + 머니투데이·매일경제·한국경제(구글 뉴스
+  site: 검색)에서 카드업계 키워드(카드사 브랜드명 포함)로 필터링 (API 키 불필요)
 - 발송: 카카오 "나에게 보내기" API (`POST /v2/api/talk/memo/default/send`)
-- 스케줄: GitHub Actions cron, 매일 08:00 KST
+- 스케줄: GitHub Actions 자체 `schedule` 트리거는 이 저장소에서 신뢰할 수 없어서
+  뺐다 — 대신 외부 트리거(Claude 세션의 Routine)가 매일 08:07 KST에
+  `workflow_dispatch`로 직접 실행시킨다.
 
 ### 1. 카카오 앱 설정 및 refresh_token 발급
 
