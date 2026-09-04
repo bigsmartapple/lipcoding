@@ -6,9 +6,9 @@
    포맷이라 이런 차단이 없다)
 2. 구글 뉴스 RSS의 site: 검색 (머니투데이는 자체 RSS 서비스를 중단(HTTP 410)해서
    대체 수단으로, 매일경제는 자체 RSS 카테고리에 카드/금융 키워드 기사가 없는
-   날을 보완하기 위해, 한국경제는 자체 RSS가 Cloudflare 봇 차단(403)이라 대체
-   수단으로 각각 site:mt.co.kr / site:mk.co.kr / site:hankyung.com으로 검색해
-   가져온다)
+   날을 보완하기 위해, 한국경제·헤럴드경제는 자체 RSS가 없거나 접근이 막혀
+   있어 대체 수단으로 각각 site:mt.co.kr / site:mk.co.kr / site:hankyung.com /
+   site:heraldcorp.com으로 검색해 가져온다)
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ RSS_FEEDS = [
 
 # 자체 RSS가 없는 언론사는 구글 뉴스 site: 검색으로 대체한다
 GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
-GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr", "hankyung.com"]
+GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr", "hankyung.com", "heraldcorp.com"]
 
 KST = timezone(timedelta(hours=9))
 MAX_ARTICLE_AGE_HOURS = 26
