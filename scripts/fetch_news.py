@@ -6,9 +6,16 @@
    포맷이라 이런 차단이 없다)
 2. 구글 뉴스 RSS의 site: 검색 (머니투데이는 자체 RSS 서비스를 중단(HTTP 410)해서
    대체 수단으로, 매일경제는 자체 RSS 카테고리에 카드/금융 키워드 기사가 없는
-   날을 보완하기 위해, 한국경제·헤럴드경제는 자체 RSS가 없거나 접근이 막혀
-   있어 대체 수단으로 각각 site:mt.co.kr / site:mk.co.kr / site:hankyung.com /
-   site:heraldcorp.com으로 검색해 가져온다)
+   날을 보완하기 위해, 한국경제·헤럴드경제·조선일보는 자체 RSS가 없거나 접근이
+   막혀 있어 대체 수단으로 각각 site:mt.co.kr / site:mk.co.kr /
+   site:hankyung.com / site:heraldcorp.com / site:chosun.com으로 검색해 가져온다)
+
+한 언론사가 같은 소식을 여러 건(제목만 다르게) 올려서 브리핑 한 카테고리를
+독점하는 것을 막기 위해, 언론사별로 최대 MAX_PER_PRESS건까지만 우선 채우고
+언론사를 번갈아가며 고른다(`_diversify`). 또 어제 이미 보낸 기사가
+MAX_ARTICLE_AGE_HOURS(26시간) 안에 다시 걸려 중복 발송되는 것을 막기 위해,
+호출하는 쪽(send_daily_briefing.py)이 최근 보낸 기사 제목을 `sent_history`
+모듈로 기록해뒀다가 `exclude_titles`로 넘겨준다.
 """
 from __future__ import annotations
 
@@ -35,11 +42,14 @@ RSS_FEEDS = [
 
 # 자체 RSS가 없는 언론사는 구글 뉴스 site: 검색으로 대체한다
 GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
-GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr", "hankyung.com", "heraldcorp.com"]
+GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr", "hankyung.com", "heraldcorp.com", "chosun.com"]
 
 KST = timezone(timedelta(hours=9))
 MAX_ARTICLE_AGE_HOURS = 26
 ARTICLES_PER_SECTION = 5
+# 한 언론사가 같은 카테고리의 슬롯을 이 개수보다 많이 차지하지 못하게 한다
+# (단, 다른 언론사에 기사가 없어 슬롯이 남으면 그때는 상한을 넘겨서도 채운다)
+MAX_PER_PRESS = 2
 
 # 카테고리별 제목 필터링 키워드 (먼저 매칭되는 카테고리로 분류)
 SECTIONS: dict[str, list[str]] = {
@@ -165,10 +175,48 @@ def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
     return items
 
 
-def fetch_briefing_sections() -> dict[str, list[dict]]:
-    """카테고리별 최신 카드업계 뉴스를 반환한다."""
+def _diversify(items: list[dict]) -> list[dict]:
+    """한 언론사가 슬롯을 독점하지 않도록 언론사별로 최대 MAX_PER_PRESS건까지
+    먼저 채우고 번갈아가며 고른다. items는 최신순으로 정렬돼 있다고 가정한다.
+    1차 라운드로 채우고도 슬롯이 남으면(다른 언론사에 기사가 없는 경우) 2차
+    라운드에서 상한 없이 나머지를 채운다.
+    """
+    by_press: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for item in items:
+        key = item["press"] or "기타"
+        if key not in by_press:
+            by_press[key] = []
+            order.append(key)
+        by_press[key].append(item)
+
+    selected: list[dict] = []
+    counts: dict[str, int] = {key: 0 for key in order}
+
+    for cap in (MAX_PER_PRESS, ARTICLES_PER_SECTION):
+        progressed = True
+        while len(selected) < ARTICLES_PER_SECTION and progressed:
+            progressed = False
+            for key in order:
+                if len(selected) >= ARTICLES_PER_SECTION:
+                    break
+                if not by_press[key] or counts[key] >= cap:
+                    continue
+                selected.append(by_press[key].pop(0))
+                counts[key] += 1
+                progressed = True
+
+    return selected
+
+
+def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str, list[dict]]:
+    """카테고리별 최신 카드업계 뉴스를 반환한다.
+
+    exclude_titles에 담긴 제목의 기사는 (이미 발송된 것으로 보고) 제외한다.
+    """
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=MAX_ARTICLE_AGE_HOURS)
+    exclude_titles = exclude_titles or set()
 
     all_items: list[dict] = []
     for feed_url in RSS_FEEDS:
@@ -185,22 +233,20 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
                 except (requests.RequestException, ET.ParseError):
                     continue
 
-    sections: dict[str, list[dict]] = {category: [] for category in SECTIONS}
+    candidates: dict[str, list[dict]] = {category: [] for category in SECTIONS}
     seen_titles: set[str] = set()
 
     for item in sorted(all_items, key=lambda a: a["pub_date"], reverse=True):
         title = item["title"]
-        if title in seen_titles or item["pub_date"] < cutoff:
+        if title in seen_titles or title in exclude_titles or item["pub_date"] < cutoff:
             continue
         if any(keyword in title for keyword in EXCLUDE_KEYWORDS):
             continue
 
         for category, keywords in SECTIONS.items():
-            if len(sections[category]) >= ARTICLES_PER_SECTION:
-                continue
             if any(keyword in title for keyword in keywords):
                 seen_titles.add(title)
-                sections[category].append(
+                candidates[category].append(
                     {
                         "title": title,
                         "link": item["link"],
@@ -211,4 +257,4 @@ def fetch_briefing_sections() -> dict[str, list[dict]]:
                 )
                 break
 
-    return sections
+    return {category: _diversify(items) for category, items in candidates.items()}

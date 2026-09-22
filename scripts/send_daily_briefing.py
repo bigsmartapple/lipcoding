@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 
 from fetch_news import KST, SECTIONS, fetch_briefing_sections
 from kakao_client import MAX_LIST_CONTENTS, refresh_access_token, send_list_message, send_text_message
+from sent_history import load_history, record_sent, save_history
 
 # 카카오 콘솔 Web 도메인에 등록된 도메인이어야 링크가 정상 동작한다.
 FALLBACK_LINK_URL = "https://www.yna.co.kr"
@@ -60,7 +61,8 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    sections = fetch_briefing_sections()
+    history = load_history()
+    sections = fetch_briefing_sections(exclude_titles=set(history.keys()))
     today = datetime.now(KST).strftime("%Y-%m-%d")
     total_articles = sum(len(articles) for articles in sections.values())
 
@@ -101,6 +103,9 @@ def main() -> int:
                 send_text_message(access_token, text, article["link"])
             else:
                 send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
+
+    sent_titles = [article["title"] for articles in sections.values() for article in articles]
+    save_history(record_sent(history, sent_titles))
 
     print("카카오톡 브리핑 발송 완료")
     return 0
