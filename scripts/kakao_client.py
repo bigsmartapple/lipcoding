@@ -33,6 +33,8 @@ def refresh_access_token(rest_api_key: str, refresh_token: str) -> dict:
         },
         timeout=10,
     )
+    if not resp.ok:
+        print(f"[ERROR] 카카오 토큰 갱신 실패: status={resp.status_code} body={resp.text}", file=sys.stderr)
     resp.raise_for_status()
     return resp.json()
 
