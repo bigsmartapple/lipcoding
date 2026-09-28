@@ -231,32 +231,46 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
     exclude_titles = exclude_titles or set()
 
     all_items: list[dict] = []
+    rss_ok = rss_fail = 0
     for feed_url in RSS_FEEDS:
         try:
             all_items.extend(_fetch_feed_items(feed_url))
-        except (requests.RequestException, ET.ParseError):
-            continue
+            rss_ok += 1
+        except (requests.RequestException, ET.ParseError) as e:
+            rss_fail += 1
+            print(f"[뉴스 수집] RSS 피드 실패: {feed_url} ({e})")
 
+    google_ok = google_fail = 0
     for site in GOOGLE_NEWS_SITES:
         for keywords in SECTIONS.values():
             for keyword in keywords:
                 try:
                     all_items.extend(_fetch_google_news_site_items(site, keyword))
-                except (requests.RequestException, ET.ParseError):
-                    continue
+                    google_ok += 1
+                except (requests.RequestException, ET.ParseError) as e:
+                    google_fail += 1
+                    print(f"[뉴스 수집] 구글 뉴스 검색 실패: site={site} keyword={keyword} ({e})")
+
+    raw_count = len(all_items)
+    matched_count = 0
+    excluded_by_history = 0
 
     candidates: dict[str, list[dict]] = {category: [] for category in SECTIONS}
     seen_titles: set[str] = set()
 
     for item in sorted(all_items, key=lambda a: a["pub_date"], reverse=True):
         title = item["title"]
-        if title in seen_titles or title in exclude_titles or item["pub_date"] < cutoff:
+        if title in seen_titles or item["pub_date"] < cutoff:
             continue
         if any(keyword in title for keyword in EXCLUDE_KEYWORDS):
             continue
 
         for category, keywords in SECTIONS.items():
             if any(keyword in title for keyword in keywords):
+                matched_count += 1
+                if title in exclude_titles:
+                    excluded_by_history += 1
+                    break
                 seen_titles.add(title)
                 candidates[category].append(
                     {
@@ -269,4 +283,11 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
                 )
                 break
 
-    return {category: _diversify(items) for category, items in candidates.items()}
+    sections = {category: _diversify(items) for category, items in candidates.items()}
+    final_count = sum(len(items) for items in sections.values())
+    print(
+        f"[뉴스 수집] RSS {rss_ok}/{rss_ok + rss_fail}건 + 구글뉴스 {google_ok}/{google_ok + google_fail}건 "
+        f"쿼리 성공 → 원본 기사 {raw_count}건 / 카테고리 매칭 {matched_count}건 / "
+        f"발송 이력 제외 {excluded_by_history}건 / 최종 선정 {final_count}건"
+    )
+    return sections
