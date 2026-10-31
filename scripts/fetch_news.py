@@ -175,8 +175,15 @@ def _fetch_feed_items(url: str) -> list[dict]:
 
 
 def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
-    """구글 뉴스 RSS에서 특정 사이트(site:)와 키워드로 기사를 검색한다."""
-    query = f"site:{site} {keyword}"
+    """구글 뉴스 RSS에서 특정 사이트(site:)와 키워드로 기사를 검색한다.
+
+    구글 뉴스가 <pubDate>에 실제 최초 발행일이 아니라 최근 재색인/재노출
+    시점을 넣어주는 경우가 있어(예: 2023~2024년 보도자료가 오늘 날짜로
+    둔갑해 들어온 적이 있다), "when:2d" 연산자로 구글 자체의 최신성 판단을
+    한 번 더 걸어 오래된 기사가 섞여 들어올 여지를 줄인다. 이후 코드의
+    pub_date 기준 cutoff 필터링과 이중으로 걸린다.
+    """
+    query = f"site:{site} {keyword} when:2d"
     resp = requests.get(
         GOOGLE_NEWS_SEARCH_URL,
         params={"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"},
