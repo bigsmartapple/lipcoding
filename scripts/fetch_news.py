@@ -1,14 +1,20 @@
-"""카드업계 뉴스를 주요 언론사 RSS 피드에서 키워드로 필터링해 가져온다.
+"""카드업계 뉴스를 주요 언론사 RSS 피드와 구글 뉴스 검색에서 키워드로
+필터링해 가져온다.
 
 네이버 뉴스 검색(search.naver.com)은 GitHub Actions 같은 클라우드 서버 IP에서의
 요청을 403으로 차단하기 때문에, 대신 다음 두 경로에서 기사를 모은다.
 1. 언론사가 직접 제공하는 RSS 피드 (연합뉴스, 매일경제 — 기계가 읽도록 만들어진
    포맷이라 이런 차단이 없다)
-2. 구글 뉴스 RSS의 site: 검색 (머니투데이는 자체 RSS 서비스를 중단(HTTP 410)해서
-   대체 수단으로, 매일경제는 자체 RSS 카테고리에 카드/금융 키워드 기사가 없는
-   날을 보완하기 위해, 한국경제·헤럴드경제·조선일보는 자체 RSS가 없거나 접근이
-   막혀 있어 대체 수단으로 각각 site:mt.co.kr / site:mk.co.kr /
-   site:hankyung.com / site:heraldcorp.com / site:chosun.com으로 검색해 가져온다)
+2. 구글 뉴스 RSS 검색 (키워드별로, 언론사 제한 없이 검색한다)
+
+예전에는 구글 뉴스 검색을 site:mt.co.kr / site:mk.co.kr / site:hankyung.com /
+site:heraldcorp.com / site:chosun.com 식으로 특정 언론사에만 제한해서 썼는데,
+그 목록에 없는 언론사(예: 이투데이, 파이낸셜투데이, 폴리뉴스 등)가 보도한
+기사는 다른 곳에서 전혀 받아 적지 않는 한 계속 누락됐다 — "BC카드, AI
+스타트업 피클과 '에이전틱 페이' 기술검증" 기사가 그런 경우였다. 언론사
+목록을 하나씩 추가하는 방식은 끝이 없어서, 이제 언론사 제한 없이 키워드만
+검색한다. 품질 낮은 언론사나 한 언론사의 중복 보도는 기존 EXCLUDE_KEYWORDS
+필터링과 언론사별 상한(`_diversify`)으로 걸러낸다.
 
 한 언론사가 같은 소식을 여러 건(제목만 다르게) 올려서 브리핑 한 카테고리를
 독점하는 것을 막기 위해, 언론사별로 최대 MAX_PER_PRESS건까지만 우선 채우고
@@ -40,9 +46,7 @@ RSS_FEEDS = [
     "https://www.mk.co.kr/rss/50100032/",
 ]
 
-# 자체 RSS가 없는 언론사는 구글 뉴스 site: 검색으로 대체한다
 GOOGLE_NEWS_SEARCH_URL = "https://news.google.com/rss/search"
-GOOGLE_NEWS_SITES = ["mt.co.kr", "mk.co.kr", "hankyung.com", "heraldcorp.com", "chosun.com"]
 
 KST = timezone(timedelta(hours=9))
 MAX_ARTICLE_AGE_HOURS = 26
@@ -201,8 +205,8 @@ def _fetch_feed_items(url: str) -> list[dict]:
     return items
 
 
-def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
-    """구글 뉴스 RSS에서 특정 사이트(site:)와 키워드로 기사를 검색한다.
+def _fetch_google_news_keyword_items(keyword: str) -> list[dict]:
+    """구글 뉴스 RSS에서 언론사 제한 없이 키워드로 기사를 검색한다.
 
     구글 뉴스가 <pubDate>에 실제 최초 발행일이 아니라 최근 재색인/재노출
     시점을 넣어주는 경우가 있어(예: 2023~2024년 보도자료가 오늘 날짜로
@@ -210,7 +214,7 @@ def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
     한 번 더 걸어 오래된 기사가 섞여 들어올 여지를 줄인다. 이후 코드의
     pub_date 기준 cutoff 필터링과 이중으로 걸린다.
     """
-    query = f"site:{site} {keyword} when:2d"
+    query = f"{keyword} when:2d"
     resp = requests.get(
         GOOGLE_NEWS_SEARCH_URL,
         params={"q": query, "hl": "ko", "gl": "KR", "ceid": "KR:ko"},
@@ -243,7 +247,10 @@ def _fetch_google_news_site_items(site: str, keyword: str) -> list[dict]:
         except (TypeError, ValueError):
             continue
 
-        items.append({"title": title, "link": link, "press": press, "host": site, "pub_date": pub_date})
+        # 언론사를 site:로 제한하지 않으므로, 파비콘에 쓸 host는 실제 기사
+        # 링크에서 직접 뽑아야 한다(예전에는 site 파라미터를 그대로 썼다).
+        host = _host_of(link)
+        items.append({"title": title, "link": link, "press": press, "host": host, "pub_date": pub_date})
 
     return items
 
@@ -302,15 +309,14 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
             print(f"[뉴스 수집] RSS 피드 실패: {feed_url} ({e})")
 
     google_ok = google_fail = 0
-    for site in GOOGLE_NEWS_SITES:
-        for keywords in SECTIONS.values():
-            for keyword in keywords:
-                try:
-                    all_items.extend(_fetch_google_news_site_items(site, keyword))
-                    google_ok += 1
-                except (requests.RequestException, ET.ParseError) as e:
-                    google_fail += 1
-                    print(f"[뉴스 수집] 구글 뉴스 검색 실패: site={site} keyword={keyword} ({e})")
+    for keywords in SECTIONS.values():
+        for keyword in keywords:
+            try:
+                all_items.extend(_fetch_google_news_keyword_items(keyword))
+                google_ok += 1
+            except (requests.RequestException, ET.ParseError) as e:
+                google_fail += 1
+                print(f"[뉴스 수집] 구글 뉴스 검색 실패: keyword={keyword} ({e})")
 
     raw_count = len(all_items)
     matched_count = 0
