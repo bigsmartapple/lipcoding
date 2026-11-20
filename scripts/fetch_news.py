@@ -18,7 +18,10 @@ site:heraldcorp.com / site:chosun.com 식으로 특정 언론사에만 제한해
 
 한 언론사가 같은 소식을 여러 건(제목만 다르게) 올려서 브리핑 한 카테고리를
 독점하는 것을 막기 위해, 언론사별로 최대 MAX_PER_PRESS건까지만 우선 채우고
-언론사를 번갈아가며 고른다(`_diversify`). 또 어제 이미 보낸 기사가
+언론사를 번갈아가며 고른다(`_diversify`). 언론사 제한 없이 검색하게 되면서
+여러 언론사가 같은 사건을 제목만 다르게 보도한 기사가 한 브리핑에 함께
+뽑히는 경우가 늘었는데, 이는 제목 문자열 유사도로 걸러낸다(`_is_near_duplicate`,
+DUPLICATE_TITLE_SIMILARITY_THRESHOLD). 또 어제 이미 보낸 기사가
 MAX_ARTICLE_AGE_HOURS(26시간) 안에 다시 걸려 중복 발송되는 것을 막기 위해,
 호출하는 쪽(send_daily_briefing.py)이 최근 보낸 기사 제목을 `sent_history`
 모듈로 기록해뒀다가 `exclude_titles`로 넘겨준다.
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
@@ -54,6 +58,12 @@ ARTICLES_PER_SECTION = 5
 # 한 언론사가 같은 카테고리의 슬롯을 이 개수보다 많이 차지하지 못하게 한다
 # (단, 다른 언론사에 기사가 없어 슬롯이 남으면 그때는 상한을 넘겨서도 채운다)
 MAX_PER_PRESS = 2
+# 여러 언론사가 같은 사건을 제목만 다르게 보도하는 경우(예: "KB국민카드,
+# 발달장애 청소년 현악단 후원"과 "KB국민카드, 발달장애 청소년 오케스트라
+# 'KB 알레그로' 정기연주회 개최") 제목 문자열 유사도로 걸러낸다. 실제로
+# 같은 사건을 다룬 제목 쌍은 0.67~0.82, 같은 회사의 서로 다른 사건은
+# 0.4~0.5 수준으로 나와 0.6을 기준으로 깔끔하게 나뉜다.
+DUPLICATE_TITLE_SIMILARITY_THRESHOLD = 0.6
 
 # 카테고리별 제목 필터링 키워드 (먼저 매칭되는 카테고리로 분류)
 # 실제 기사 제목은 보통 정식 사명을 쓰기 때문에("KB카드"가 아니라 "KB국민카드",
@@ -255,6 +265,14 @@ def _fetch_google_news_keyword_items(keyword: str) -> list[dict]:
     return items
 
 
+def _is_near_duplicate(title: str, existing_titles: list[str]) -> bool:
+    """제목이 이미 선정된 기사들 중 하나와 사실상 같은 사건을 다룬 것인지 본다."""
+    return any(
+        SequenceMatcher(None, title, other).ratio() >= DUPLICATE_TITLE_SIMILARITY_THRESHOLD
+        for other in existing_titles
+    )
+
+
 def _diversify(items: list[dict]) -> list[dict]:
     """한 언론사가 슬롯을 독점하지 않도록 언론사별로 최대 MAX_PER_PRESS건까지
     먼저 채우고 번갈아가며 고른다. items는 최신순으로 정렬돼 있다고 가정한다.
@@ -321,6 +339,7 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
     raw_count = len(all_items)
     matched_count = 0
     excluded_by_history = 0
+    excluded_as_duplicate = 0
 
     candidates: dict[str, list[dict]] = {category: [] for category in SECTIONS}
     seen_titles: set[str] = set()
@@ -335,10 +354,13 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
         for category, keywords in SECTIONS.items():
             if any(keyword in title for keyword in keywords):
                 matched_count += 1
+                seen_titles.add(title)
                 if title in exclude_titles:
                     excluded_by_history += 1
                     break
-                seen_titles.add(title)
+                if _is_near_duplicate(title, [c["title"] for c in candidates[category]]):
+                    excluded_as_duplicate += 1
+                    break
                 candidates[category].append(
                     {
                         "title": title,
@@ -355,6 +377,7 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
     print(
         f"[뉴스 수집] RSS {rss_ok}/{rss_ok + rss_fail}건 + 구글뉴스 {google_ok}/{google_ok + google_fail}건 "
         f"쿼리 성공 → 원본 기사 {raw_count}건 / 카테고리 매칭 {matched_count}건 / "
-        f"발송 이력 제외 {excluded_by_history}건 / 최종 선정 {final_count}건"
+        f"발송 이력 제외 {excluded_by_history}건 / 중복 기사 제외 {excluded_as_duplicate}건 / "
+        f"최종 선정 {final_count}건"
     )
     return sections
