@@ -28,6 +28,7 @@ MAX_ARTICLE_AGE_HOURS(26시간) 안에 다시 걸려 중복 발송되는 것을 
 """
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
@@ -65,6 +66,15 @@ MAX_PER_PRESS = 2
 # 0.4~0.5 수준으로 나와 0.6을 기준으로 깔끔하게 나뉜다.
 DUPLICATE_TITLE_SIMILARITY_THRESHOLD = 0.6
 
+# 같은 사건인데 두 언론사가 제목 구조를 완전히 다르게 써서(예: "KB국민카드
+# 후원 'KB 알레그로', 제2회 정기연주회 성료"와 "KB국민카드, 발달장애
+# 청소년 오케스트라 'KB 알레그로' 개최") 문자열 유사도가 낮게 나오는
+# 경우가 있다. 이런 경우에도 행사/상품명처럼 따옴표로 묶인 고유명사는
+# 그대로 반복되는 경우가 많아, 같은 카드사 키워드를 공유하면서 따옴표
+# 안의 문구도 일치하면 같은 사건으로 보고 중복 처리한다(일반 명사는
+# 보통 짧게 끝나므로 2자 이상만 본다).
+QUOTE_PATTERN = re.compile(r"['‘’\"“”]([^'‘’\"“”]{2,})['‘’\"“”]")
+
 # 카테고리별 제목 필터링 키워드 (먼저 매칭되는 카테고리로 분류)
 # 실제 기사 제목은 보통 정식 사명을 쓰기 때문에("KB카드"가 아니라 "KB국민카드",
 # "NH카드"가 아니라 "NH농협카드") 약칭만 쓰면 대부분의 기사를 놓친다 — 정식
@@ -88,6 +98,13 @@ SECTIONS: dict[str, list[str]] = {
         "카카오페이카드",
     ],
 }
+
+_ALL_SECTION_KEYWORDS = [kw for kws in SECTIONS.values() for kw in kws]
+
+
+def _shared_brand_keyword(a: str, b: str) -> bool:
+    """두 제목이 같은 카드사 키워드를 공유하는지 본다(따옴표 문구 중복 판단에 쓴다)."""
+    return any(kw in a and kw in b for kw in _ALL_SECTION_KEYWORDS)
 
 # 인사/부고/동정 등 브리핑 가치가 낮은 정형 기사 + 원치 않는 주제(저축은행) +
 # "신용카드"가 들어간다는 이유만으로 걸려드는 불법 신용카드 현금화 광고 +
@@ -265,12 +282,19 @@ def _fetch_google_news_keyword_items(keyword: str) -> list[dict]:
     return items
 
 
+def _quoted_phrases(title: str) -> set[str]:
+    return {m.strip() for m in QUOTE_PATTERN.findall(title)}
+
+
 def _is_near_duplicate(title: str, existing_titles: list[str]) -> bool:
     """제목이 이미 선정된 기사들 중 하나와 사실상 같은 사건을 다룬 것인지 본다."""
-    return any(
-        SequenceMatcher(None, title, other).ratio() >= DUPLICATE_TITLE_SIMILARITY_THRESHOLD
-        for other in existing_titles
-    )
+    title_quotes = _quoted_phrases(title)
+    for other in existing_titles:
+        if SequenceMatcher(None, title, other).ratio() >= DUPLICATE_TITLE_SIMILARITY_THRESHOLD:
+            return True
+        if title_quotes and _shared_brand_keyword(title, other) and title_quotes & _quoted_phrases(other):
+            return True
+    return False
 
 
 def _diversify(items: list[dict]) -> list[dict]:
