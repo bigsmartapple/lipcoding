@@ -7,15 +7,20 @@ URL을 링크로 넣어서 항목을 탭하면 그 기사로 바로 연결되게
 그런 경우엔 text 템플릿으로 대체한다.
 
 카카오 메시지의 link(web_url)는 카카오 개발자 콘솔 [앱 설정 > 플랫폼 > Web
-도메인]에 등록된 도메인으로만 정상 동작한다. RSS_FEEDS/GOOGLE_NEWS_SITES에
-새 언론사를 추가하면 그 도메인도 Web 도메인에 등록해야 링크가 열린다.
+도메인]에 등록된 도메인으로만 정상 동작한다. fetch_news가 더 이상 언론사를
+site:로 제한하지 않고 검색하기 때문에, 구글 뉴스가 돌려주는 기사 링크는
+이제 등록되지 않은 도메인일 수도 있다 — 그런 링크를 그대로 보내면 카카오가
+오류를 내거나 링크가 열리지 않을 수 있어, 등록된 도메인이 아니면 안전한
+기본 링크(FALLBACK_LINK_URL)로 대체한다(`_safe_link`). 새 언론사의 도메인을
+안정적으로 쓰려면 그 도메인을 Web 도메인에 등록하고 KNOWN_LINK_DOMAINS에도
+추가해야 한다.
 """
 from __future__ import annotations
 
 import os
 import sys
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fetch_news import KST, SECTIONS, fetch_briefing_sections
 from kakao_client import MAX_LIST_CONTENTS, refresh_access_token, send_list_message, send_text_message
@@ -24,6 +29,24 @@ from sent_history import load_history, record_sent, save_history
 # 카카오 콘솔 Web 도메인에 등록된 도메인이어야 링크가 정상 동작한다.
 FALLBACK_LINK_URL = "https://www.yna.co.kr"
 GOOGLE_NEWS_SEARCH_PAGE = "https://news.google.com/search"
+
+# 카카오 콘솔 [앱 설정 > 플랫폼 > Web 도메인]에 등록돼 있는 것으로 확인된
+# 도메인들. 기사 링크의 도메인이 이 목록에 없으면 FALLBACK_LINK_URL로
+# 대체한다 — 등록 안 된 도메인 링크를 그대로 보내면 카카오 발송이 실패하거나
+# 링크가 열리지 않을 수 있기 때문이다.
+KNOWN_LINK_DOMAINS = {
+    "yna.co.kr",
+    "mk.co.kr",
+    "mt.co.kr",
+    "hankyung.com",
+    "heraldcorp.com",
+    "chosun.com",
+}
+
+
+def _safe_link(link: str) -> str:
+    host = urlparse(link).netloc.replace("www.", "")
+    return link if host in KNOWN_LINK_DOMAINS else FALLBACK_LINK_URL
 
 
 def _category_more_link(category: str) -> str:
@@ -87,7 +110,7 @@ def main() -> int:
                     "title": article["title"],
                     "description": article["press"],
                     "image_url": article["icon_url"],
-                    "link": article["link"],
+                    "link": _safe_link(article["link"]),
                 }
                 for article in chunk
             ]
@@ -100,7 +123,7 @@ def main() -> int:
                 # 이런 경우엔 text 템플릿으로 그 기사 링크를 바로 보낸다.
                 article = chunk[0]
                 text = f"{header_title}\n{article['title']} ({article['press']})"
-                send_text_message(access_token, text, article["link"])
+                send_text_message(access_token, text, _safe_link(article["link"]))
             else:
                 send_list_message(access_token, header_title, more_link, contents, button_title="관련기사 더보기")
 
