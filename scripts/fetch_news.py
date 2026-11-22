@@ -173,13 +173,22 @@ EXCLUDE_KEYWORDS = [
     # 언론사 제한 없이 검색하게 되면서(언론사 목록 제한 폐지) 스포츠 전문
     # 매체(예: 스포츠타임스)의 경기 기사까지 들어오기 시작했다 — 이런 매체는
     # 자체 섹션 태그와 경기 결과 표현을 또 다르게 쓴다(예: "[게임노트] '리누스
-    # 41점 맹활약' KB손해보험, 우리카드에 3-2 승리로 시즌 첫 승").
+    # 41점 맹활약' KB손해보험, 우리카드에 3-2 승리로 시즌 첫 승"). 아래
+    # EXCLUDE_PRESS_KEYWORDS가 이런 매체를 언론사명으로 걸러내는 더 안정적인
+    # 방법이라, 제목 쪽은 참고용으로만 남겨둔다.
     "[게임노트]",
     "맹활약",
     # "감독"은 스포츠팀 감독 기사뿐 아니라 "금융감독원"(정식 금융 규제기관명)에도
     # 들어가는 글자라 EXCLUDE_KEYWORDS에 넣지 않는다 — 넣으면 금융감독원 관련
     # 정상적인 카드업계 기사까지 함께 걸러진다.
 ]
+
+# 언론사 제한 없이 검색하게 되면서 스포츠/연예 전문 매체(예: 스포츠타임스,
+# 데일리스포츠한국, 톱스타뉴스)의 기사까지 들어온다. 이런 매체는 기사마다
+# 표현이 다 달라서 제목 키워드로는 끝없이 쫓아가야 하는데, 언론사명 자체에
+# "스포츠"/"스타" 같은 표시가 있어 언론사명으로 거르는 게 훨씬 안정적이다.
+# 카드업계 관련 정상 언론사 중에는 이런 표현이 들어간 이름이 없다.
+EXCLUDE_PRESS_KEYWORDS = ["스포츠", "톱스타"]
 
 # 카카오톡은 메시지 본문에 도메인 형태 문자열(예: yna.co.kr)이 있으면 자동으로
 # 링크로 인식해 우리가 지정한 기사 링크 대신 그 도메인의 홈페이지로 연결해버린다.
@@ -382,6 +391,8 @@ def fetch_briefing_sections(exclude_titles: set[str] | None = None) -> dict[str,
         if title in seen_titles or item["pub_date"] < cutoff:
             continue
         if any(keyword in title for keyword in EXCLUDE_KEYWORDS):
+            continue
+        if any(keyword in item["press"] for keyword in EXCLUDE_PRESS_KEYWORDS):
             continue
 
         for category, keywords in SECTIONS.items():
